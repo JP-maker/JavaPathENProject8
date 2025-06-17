@@ -14,7 +14,7 @@ public class User {
 	private String phoneNumber;
 	private String emailAddress;
 	private Date latestLocationTimestamp;
-	// OK : Thread-safe pour le tracker
+	// CORRIGÉ : Doit être thread-safe pour les récompenses
 	private final List<VisitedLocation> visitedLocations = new CopyOnWriteArrayList<>();
 	// CORRIGÉ : Doit être thread-safe pour les récompenses
 	private final List<UserReward> userRewards = new CopyOnWriteArrayList<>();

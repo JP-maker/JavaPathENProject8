@@ -1,5 +1,6 @@
 package com.openclassrooms.tourguide.service;
 
+import com.openclassrooms.tourguide.dto.NearbyAttractionDto;
 import com.openclassrooms.tourguide.helper.InternalTestHelper;
 import com.openclassrooms.tourguide.tracker.Tracker;
 import com.openclassrooms.tourguide.user.User;
@@ -7,14 +8,7 @@ import com.openclassrooms.tourguide.user.UserReward;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -27,6 +21,7 @@ import gpsUtil.location.Attraction;
 import gpsUtil.location.Location;
 import gpsUtil.location.VisitedLocation;
 
+import rewardCentral.RewardCentral;
 import tripPricer.Provider;
 import tripPricer.TripPricer;
 
@@ -34,13 +29,15 @@ import tripPricer.TripPricer;
 public class TourGuideService {
 	private Logger logger = LoggerFactory.getLogger(TourGuideService.class);
 	private final GpsUtil gpsUtil;
+	private final RewardCentral rewardCentral;
 	private final RewardsService rewardsService;
 	private final TripPricer tripPricer = new TripPricer();
 	public final Tracker tracker;
 	boolean testMode = true;
 
-	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService) {
+	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService, RewardCentral rewardCentral) {
 		this.gpsUtil = gpsUtil;
+		this.rewardCentral = rewardCentral;
 		this.rewardsService = rewardsService;
 		
 		Locale.setDefault(Locale.US);
@@ -161,4 +158,42 @@ public class TourGuideService {
 		return Date.from(localDateTime.toInstant(ZoneOffset.UTC));
 	}
 
+	/**
+	 * Calcule les cinq attractions touristiques les plus proches de la position d'un utilisateur.
+	 * Pour chaque attraction, des informations détaillées sont retournées, incluant la distance
+	 * et les points de récompense.
+	 *
+	 * @param visitedLocation La dernière localisation connue de l'utilisateur.
+	 * @param user L'utilisateur pour qui les récompenses sont calculées.
+	 * @return Une liste de 5 objets DTO contenant les informations des attractions les plus proches.
+	 */
+	public List<NearbyAttractionDto> getFiveNearbyAttractions(VisitedLocation visitedLocation, User user) {
+		List<Attraction> allAttractions = gpsUtil.getAttractions();
+		final Location userLocation = visitedLocation.location;
+
+		List<NearbyAttractionDto> nearbyAttractions = allAttractions.stream()
+				// 1. Créez un objet temporaire contenant l'attraction et sa distance à l'utilisateur.
+				.map(attraction -> new Object() {
+					final Attraction attr = attraction;
+					final double distance = rewardsService.getDistance(attraction, userLocation);
+				})
+				// 2. Triez ces objets par distance croissante.
+				.sorted(Comparator.comparing(o -> o.distance))
+				// 3. Gardez seulement les 5 plus proches.
+				.limit(5)
+				// 4. Transformez ces 5 objets en notre DTO final.
+				.map(o -> new NearbyAttractionDto(
+						o.attr.attractionName,
+						o.attr.latitude,
+						o.attr.longitude,
+						userLocation.latitude,
+						userLocation.longitude,
+						o.distance,
+						rewardCentral.getAttractionRewardPoints(o.attr.attractionId, user.getUserId())
+				))
+				// 5. Collectez les résultats dans une liste.
+				.collect(Collectors.toList());
+
+		return nearbyAttractions;
+	}
 }
