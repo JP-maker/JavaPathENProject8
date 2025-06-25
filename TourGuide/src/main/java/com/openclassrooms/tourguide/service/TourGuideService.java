@@ -9,6 +9,9 @@ import com.openclassrooms.tourguide.user.UserReward;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -35,7 +38,12 @@ public class TourGuideService {
 	public final Tracker tracker;
 	boolean testMode = true;
 
+
+	// Ajout de notre propre ExecutorService pour les tâches de TourGuide
+	private final ExecutorService executorService = Executors.newFixedThreadPool(100);
+
 	public TourGuideService(GpsUtil gpsUtil, RewardsService rewardsService, RewardCentral rewardCentral) {
+
 		this.gpsUtil = gpsUtil;
 		this.rewardCentral = rewardCentral;
 		this.rewardsService = rewardsService;
@@ -57,9 +65,10 @@ public class TourGuideService {
 	}
 
 	public VisitedLocation getUserLocation(User user) {
-		VisitedLocation visitedLocation = (user.getVisitedLocations().size() > 0) ? user.getLastVisitedLocation()
-				: trackUserLocation(user);
-		return visitedLocation;
+		// Si l'utilisateur n'a pas de localisation, on en traque une.
+		// La méthode trackUserLocation est maintenant asynchrone, donc on attend le résultat ici.
+		return (user.getVisitedLocations().size() > 0) ? user.getLastVisitedLocation()
+				: trackUserLocation(user).join(); // .join() attend la fin du CompletableFuture
 	}
 
 	public User getUser(String userName) {
@@ -85,11 +94,25 @@ public class TourGuideService {
 		return providers;
 	}
 
-	public VisitedLocation trackUserLocation(User user) {
-		VisitedLocation visitedLocation = gpsUtil.getUserLocation(user.getUserId());
-		user.addToVisitedLocations(visitedLocation);
-		rewardsService.calculateRewards(user);
-		return visitedLocation;
+	/**
+	 * Traque la localisation d'un utilisateur de manière asynchrone.
+	 * Cette méthode retourne un CompletableFuture qui contiendra la VisitedLocation une fois obtenue.
+	 * Elle lance également le calcul des récompenses en parallèle.
+	 *
+	 * @param user l'utilisateur à traquer.
+	 * @return un CompletableFuture contenant la VisitedLocation.
+	 */
+	public CompletableFuture<VisitedLocation> trackUserLocation(User user) {
+		return CompletableFuture.supplyAsync(() -> {
+			// 1. Obtenir la localisation (appel potentiellement long)
+			VisitedLocation visitedLocation = gpsUtil.getUserLocation(user.getUserId());
+			// 2. Ajouter la localisation à l'historique de l'utilisateur
+			user.addToVisitedLocations(visitedLocation);
+			// 3. Lancer le calcul des récompenses de manière asynchrone (ne bloque pas)
+			rewardsService.calculateRewards(user);
+			// 4. Retourner la localisation obtenue
+			return visitedLocation;
+		}, executorService);
 	}
 
 	public List<Attraction> getNearByAttractions(VisitedLocation visitedLocation) {
@@ -103,10 +126,28 @@ public class TourGuideService {
 		return nearbyAttractions;
 	}
 
+	/**
+	 * Nouvelle méthode pour traquer tous les utilisateurs en parallèle.
+	 * C'est cette méthode que le Tracker devrait appeler.
+	 */
+	public void trackAllUsers() {
+		List<User> users = getAllUsers();
+		// On crée une liste de toutes les tâches asynchrones
+		List<CompletableFuture<VisitedLocation>> futures = users.stream()
+				.map(this::trackUserLocation) // this::trackUserLocation est équivalent à user -> trackUserLocation(user)
+				.collect(Collectors.toList());
+
+		// On attend que toutes les tâches soient terminées.
+		CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+	}
+
 	private void addShutDownHook() {
 		Runtime.getRuntime().addShutdownHook(new Thread() {
 			public void run() {
 				tracker.stopTracking();
+				// Important : arrêter notre ExecutorService aussi !
+				executorService.shutdown();
+				rewardsService.shutdown();
 			}
 		});
 	}

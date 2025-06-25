@@ -2,6 +2,9 @@ package com.openclassrooms.tourguide.service;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -49,6 +52,11 @@ public class RewardsService {
 	 * Dépendance vers le service RewardCentral pour obtenir les points de récompense.
 	 */
 	private final RewardCentral rewardsCentral;
+	
+	// Ajout d'un ExecutorService pour gérer le multithreading
+	// Un pool de 100 threads est un bon point de départ pour des tâches I/O ou mixtes.
+	// À ajuster en fonction des performances observées.
+	private final ExecutorService executorService = Executors.newFixedThreadPool(100);
 
 	/**
 	 * Constructeur pour l'injection des dépendances {@link GpsUtil} et {@link RewardCentral}.
@@ -79,39 +87,44 @@ public class RewardsService {
 	}
 
 	/**
-	 * Calcule et attribue les récompenses pour un utilisateur donné.
-	 * Pour chaque lieu visité par l'utilisateur, cette méthode vérifie s'il se trouve à proximité
-	 * d'une attraction pour laquelle il n'a pas encore reçu de récompense.
-	 * Si c'est le cas, une nouvelle récompense est ajoutée à l'utilisateur.
-	 *
+	 * Calcule les récompenses pour un utilisateur de manière asynchrone.
+	 * La méthode retourne un CompletableFuture qui se terminera lorsque le calcul sera fait.
 	 * @param user L'utilisateur pour lequel les récompenses doivent être calculées.
+	 * @return un CompletableFuture<Void> qui indique l'achèvement de la tâche.
 	 */
-	public void calculateRewards(User user) {
-		List<VisitedLocation> userLocations = user.getVisitedLocations();
-		List<Attraction> attractions = gpsUtil.getAttractions();
+	public CompletableFuture<Void> calculateRewards(User user) {
+		return CompletableFuture.runAsync(() -> {
+			List<VisitedLocation> userLocations = user.getVisitedLocations();
+			List<Attraction> attractions = gpsUtil.getAttractions();
 
-		// 1. Créez un Set contenant les noms de toutes les attractions déjà récompensées.
-		Set<String> rewardedAttractionNames = user.getUserRewards().stream()
-				.map(r -> r.attraction.attractionName)
-				.collect(Collectors.toSet());
+			Set<String> rewardedAttractionNames = user.getUserRewards().stream()
+					.map(r -> r.attraction.attractionName)
+					.collect(Collectors.toSet());
 
-		for(VisitedLocation visitedLocation : userLocations) {
-			for(Attraction attraction : attractions) {
-				// 2. La vérification est maintenant beaucoup plus simple et rapide !
-				//    Et elle n'itère plus sur la liste des récompenses de l'utilisateur.
-				if (!rewardedAttractionNames.contains(attraction.attractionName)) {
+			// Utilisation d'un stream pour traiter les lieux visités
+			userLocations.forEach(visitedLocation -> {
+				// Utilisation d'un parallelStream ici pour accélérer la recherche parmi les attractions
+				attractions.parallelStream()
+						.filter(attraction -> !rewardedAttractionNames.contains(attraction.attractionName))
+						.filter(attraction -> nearAttraction(visitedLocation, attraction))
+						.forEach(attraction -> {
+							// synchronized pour éviter les race conditions lors de l'ajout de récompenses
+							// et de la mise à jour du Set partagé.
+							synchronized (user) {
+								// Double vérification au cas où un autre thread l'aurait déjà ajouté
+								if (!rewardedAttractionNames.contains(attraction.attractionName)) {
+									user.addUserReward(new UserReward(visitedLocation, attraction, getRewardPoints(attraction, user)));
+									rewardedAttractionNames.add(attraction.attractionName);
+								}
+							}
+						});
+			});
+		}, executorService); // Exécute la tâche sur notre pool de threads dédié
+	}
 
-					if(nearAttraction(visitedLocation, attraction)) {
-						// 3. On peut maintenant ajouter la récompense sans risque
-						UserReward newReward = new UserReward(visitedLocation, attraction, getRewardPoints(attraction, user));
-						user.addUserReward(newReward);
-
-						// 4. IMPORTANT : On met à jour notre Set pour ne pas ajouter la même récompense plusieurs fois dans cette même exécution
-						rewardedAttractionNames.add(attraction.attractionName);
-					}
-				}
-			}
-		}
+	// Arrête le pool de threads lorsque l'application se ferme
+	public void shutdown() {
+		executorService.shutdown();
 	}
 
 	/**

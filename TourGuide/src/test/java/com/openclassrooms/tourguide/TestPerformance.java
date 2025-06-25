@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.time.StopWatch;
 import org.junit.jupiter.api.Disabled;
@@ -54,14 +56,20 @@ public class TestPerformance {
 		InternalTestHelper.setInternalUserNumber(1000);
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService, new RewardCentral());
 
-		List<User> allUsers = new ArrayList<>();
-		allUsers = tourGuideService.getAllUsers();
+
+		List<User> allUsers = tourGuideService.getAllUsers();
 
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();
-		for (User user : allUsers) {
-			tourGuideService.trackUserLocation(user);
-		}
+
+		// 1. On lance toutes les tâches de tracking en parallèle
+		List<CompletableFuture<VisitedLocation>> futures = allUsers.stream()
+				.map(tourGuideService::trackUserLocation)
+				.collect(Collectors.toList());
+
+		// 2. On attend que TOUTES les tâches soient terminées
+		CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
 		stopWatch.stop();
 		tourGuideService.tracker.stopTracking();
 
@@ -78,20 +86,27 @@ public class TestPerformance {
 		// Users should be incremented up to 100,000, and test finishes within 20
 		// minutes
 		InternalTestHelper.setInternalUserNumber(1000);
+
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService, new RewardCentral());
 
 		Attraction attraction = gpsUtil.getAttractions().get(0);
-		List<User> allUsers = new ArrayList<>();
-		allUsers = tourGuideService.getAllUsers();
+		List<User> allUsers = tourGuideService.getAllUsers();
 		allUsers.forEach(u -> u.addToVisitedLocations(new VisitedLocation(u.getUserId(), attraction, new Date())));
 
-		allUsers.forEach(u -> rewardsService.calculateRewards(u));
+		// 1. On lance tous les calculs de récompenses en parallèle
+		List<CompletableFuture<Void>> futures = allUsers.stream()
+				.map(rewardsService::calculateRewards)
+				.collect(Collectors.toList());
+
+		// 2. On attend que TOUS les calculs soient terminés
+		CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
 		for (User user : allUsers) {
 			assertTrue(user.getUserRewards().size() > 0);
 		}
+
 		stopWatch.stop();
 		tourGuideService.tracker.stopTracking();
 
