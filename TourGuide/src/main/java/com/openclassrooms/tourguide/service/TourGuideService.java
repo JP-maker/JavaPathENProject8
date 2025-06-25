@@ -158,6 +158,7 @@ public class TourGuideService {
 		return Date.from(localDateTime.toInstant(ZoneOffset.UTC));
 	}
 
+
 	/**
 	 * Calcule les cinq attractions touristiques les plus proches de la position d'un utilisateur.
 	 * Pour chaque attraction, des informations détaillées sont retournées, incluant la distance
