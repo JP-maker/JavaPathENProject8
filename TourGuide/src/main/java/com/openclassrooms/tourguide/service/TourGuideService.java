@@ -104,15 +104,16 @@ public class TourGuideService {
 	 */
 	public CompletableFuture<VisitedLocation> trackUserLocation(User user) {
 		return CompletableFuture.supplyAsync(() -> {
-			// 1. Obtenir la localisation (appel potentiellement long)
-			VisitedLocation visitedLocation = gpsUtil.getUserLocation(user.getUserId());
-			// 2. Ajouter la localisation à l'historique de l'utilisateur
-			user.addToVisitedLocations(visitedLocation);
-			// 3. Lancer le calcul des récompenses de manière asynchrone (ne bloque pas)
-			rewardsService.calculateRewards(user);
-			// 4. Retourner la localisation obtenue
-			return visitedLocation;
-		}, executorService);
+					// 1. Obtenir la localisation (appel potentiellement long)
+					return gpsUtil.getUserLocation(user.getUserId());
+				}, executorService).thenCompose(
+						visitedLocation -> {
+							// Une fois la localisation obtenue, on l'ajoute et on lance les récompenses
+							user.addToVisitedLocations(visitedLocation);
+							// On retourne le CompletableFuture du calcul des récompenses,
+							// mais on le transforme pour qu'il retourne la VisitedLocation à la fin.
+							return rewardsService.calculateRewards(user).thenApply(v -> visitedLocation);
+						});
 	}
 
 	public List<Attraction> getNearByAttractions(VisitedLocation visitedLocation) {

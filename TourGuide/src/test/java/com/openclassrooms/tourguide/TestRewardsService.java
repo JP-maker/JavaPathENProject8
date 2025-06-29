@@ -47,7 +47,7 @@ public class TestRewardsService {
 
 		// Act: Lancement de la méthode principale à tester
 		logger.info("Action: Lancement du suivi de la localisation pour déclencher le calcul des récompenses.");
-		tourGuideService.trackUserLocation(user);
+		tourGuideService.trackUserLocation(user).join();
 
 		// Assert: Vérification des résultats
 		List<UserReward> userRewards = user.getUserRewards();
@@ -87,7 +87,7 @@ public class TestRewardsService {
 		InternalTestHelper.setInternalUserNumber(1);
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService, new RewardCentral());
 
-		rewardsService.calculateRewards(tourGuideService.getAllUsers().get(0));
+		rewardsService.calculateRewards(tourGuideService.getAllUsers().get(0)).join();
 		List<UserReward> userRewards = tourGuideService.getUserRewards(tourGuideService.getAllUsers().get(0));
 		tourGuideService.tracker.stopTracking();
 
