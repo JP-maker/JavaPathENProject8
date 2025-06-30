@@ -51,7 +51,7 @@ jobs:
       # Étape 6 (Optionnelle mais recommandée) : Uploader l'artefact
       # Permet de télécharger le .jar directement depuis la page du workflow sur GitHub
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: tourguide-app # Nom de l'artefact
           path: target/*.jar  # Chemin vers le fichier à uploader
