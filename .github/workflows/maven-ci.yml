@@ -36,7 +36,7 @@ jobs:
       # NOUVELLE ÉTAPE 3 : Installer les dépendances JAR locales
       # Cette étape est cruciale pour que Maven trouve les librairies gpsUtil, etc.
       - name: Install local JAR dependencies
-        working-directory: ./JavaPathENProject8/TourGudie
+        working-directory: TourGuide
         run: |
           mvn install:install-file -Dfile="libs/gpsUtil.jar" -DgroupId=gpsUtil -DartifactId=gpsUtil -Dversion="1.0.0" -Dpackaging=jar 
           mvn install:install-file -Dfile="libs/RewardCentral.jar" -DgroupId=rewardCentral -DartifactId=rewardCentral -Dversion="1.0.0" -Dpackaging=jar
