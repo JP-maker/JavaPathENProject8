@@ -46,16 +46,19 @@ jobs:
     # Étape 4 : Compilation
       # Exécute une commande Maven pour compiler le code
       - name: Compile
+        working-directory: TourGuide
         run: mvn -B compile --file pom.xml
 
       # Étape 5 : Tests
       # Exécute les tests. Grâce à notre pom.xml, les tests de performance sont exclus.
       - name: Run tests
+        working-directory: TourGuide
         run: mvn -B test --file pom.xml
 
       # Étape 6 : Packaging (création de l'artefact)
       # Exécute la commande package qui compile, teste (s'ils n'ont pas déjà été faits) et crée le .jar
       - name: Package application
+        working-directory: TourGuide
         run: mvn -B package --file pom.xml
 
       # Étape 7 (Optionnelle mais recommandée) : Uploader l'artefact
